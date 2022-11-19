@@ -1,20 +1,41 @@
 mod snake;
 mod arena;
+mod food;
 
-use crate::snake::{SNAKE_HEAD_COLOR, SnakeHead};
+use crate::snake::{SNAKE_HEAD_COLOR, Direction, SnakeHead};
 use crate::arena::{ARENA_HEIGHT, ARENA_WIDTH, Position, Size};
+use crate::food::{FOOD_COLOR, Food};
+use bevy::core::FixedTimestep;
 use bevy::prelude::*;
+use rand::prelude::random;
 
 fn main() {
     App::new()
+        .insert_resource(WindowDescriptor {
+            title: "Snake".to_string(),
+            width: 500.0,
+            height: 500.0,
+            ..default()
+        })
+        .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
         .add_startup_system(setup_camera)
         .add_startup_system(spawn_snake)
-        .add_system(snake_movement)
+        .add_system_set(
+            SystemSet::new()
+                .with_run_criteria(FixedTimestep::step(0.150))
+                .with_system(snake_movement),
+        )
+        .add_system(snake_movement_input.before(snake_movement))
         .add_system_set_to_stage(
             CoreStage::PostUpdate,
             SystemSet::new()
                 .with_system(position_translation)
-                .with_system(size_scaling)
+                .with_system(size_scaling),
+        )
+        .add_system_set(
+            SystemSet::new()
+                .with_run_criteria(FixedTimestep::step(1.0))
+                .with_system(food_spawner)
         )
         .add_plugins(DefaultPlugins)
         .run();
@@ -37,24 +58,53 @@ fn spawn_snake(mut commmands: Commands) {
             },
             ..default()
         })
-        .insert(SnakeHead)
+        .insert(SnakeHead {
+            direction: Direction::Up,
+        })
         .insert(Position { x: 3, y: 3 })
         .insert(Size::square(0.8));
 }
 
 fn snake_movement(
-    keyboard_input: Res<Input<KeyCode>>,
-    mut head_positions: Query<(&SnakeHead, &mut Position)>,
+    mut heads: Query<(&mut Position, &SnakeHead)>
 ) {
-    for (_head, mut pos) in head_positions.iter_mut() {
-        for key in keyboard_input.get_pressed() {
-            match key {
-                KeyCode::Left => pos.x -= 1,
-                KeyCode::Right => pos.x += 1,
-                KeyCode::Down => pos.y -= 1,
-                KeyCode::Up => pos.y += 1,
-                _ => ()
+    if let Some((mut head_pos, head)) = heads.iter_mut().next() {
+        match &head.direction {
+            Direction::Left => {
+                head_pos.x -= 1;
             }
+            Direction::Right => {
+                head_pos.x += 1;
+            }
+            Direction::Up => {
+                head_pos.y += 1;
+            }
+            Direction::Down => {
+                head_pos.y -= 1;
+            }
+        };
+    }
+}
+
+fn snake_movement_input(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut heads: Query<&mut SnakeHead>
+) {
+    if let Some(mut head) = heads.iter_mut().next() {
+        let dir: Direction = if keyboard_input.pressed(KeyCode::Left) {
+            Direction::Left
+        } else if keyboard_input.pressed(KeyCode::Down) {
+            Direction::Down
+        } else if keyboard_input.pressed(KeyCode::Up) {
+            Direction::Up
+        } else if keyboard_input.pressed(KeyCode::Right) {
+            Direction::Right
+        } else {
+            head.direction
+        };
+
+        if dir != head.direction.opposite() {
+            head.direction = dir;
         }
     }
 }
@@ -85,4 +135,21 @@ fn position_translation(windows: Res<Windows>, mut q: Query<(&Position, &mut Tra
             0.0,
         )
     }
+}
+
+fn food_spawner(mut commmands: Commands) {
+    commmands
+        .spawn_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: FOOD_COLOR,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(Food)
+        .insert(Position {
+            x: (random::<f32>() * ARENA_WIDTH as f32) as i32,
+            y: (random::<f32>() * ARENA_HEIGHT as f32) as i32,
+        })
+        .insert(Size::square(0.8));
 }
